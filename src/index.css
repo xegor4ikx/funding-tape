@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-paper text-ink font-serif;
+    /* faint paper tooth so it reads as print, not a flat web bg */
+    background-image: radial-gradient(rgba(27, 24, 19, 0.022) 1px, transparent 1px);
+    background-size: 3px 3px;
+  }
+  /* Numbers everywhere read as a ledger: aligned, tabular. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+  :focus-visible {
+    outline: 2px solid #1B1813;
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .rule-t { border-top: 1px solid theme('colors.rule'); }
+  .rule-b { border-bottom: 1px solid theme('colors.rule'); }
+  .hairline { border-color: theme('colors.rule'); }
+}
+
+/* Respect reduced motion globally. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Restrained value-flash when a number updates (150–300ms). */
+@keyframes flashPos { from { background-color: rgba(31, 107, 67, 0.16); } to { background-color: transparent; } }
+@keyframes flashNeg { from { background-color: rgba(158, 43, 37, 0.16); } to { background-color: transparent; } }
+.flash-pos { animation: flashPos 280ms ease-out; }
+.flash-neg { animation: flashNeg 280ms ease-out; }
