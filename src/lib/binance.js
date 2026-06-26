@@ -27,6 +27,34 @@ const SPOT_BASE = 'https://data-api.binance.vision'
 // USD-M perpetual futures (funding rate, mark price, index price).
 const FUT_BASE = 'https://fapi.binance.com'
 
+// In production we route every call through our own /api/binance serverless
+// proxy. Reason: Binance's futures host blocks US IPs, so a direct browser
+// fetch leaves US visitors with an empty funding board. The proxy runs in a
+// non-US region and fixes it for everyone. In local dev there's no serverless
+// runtime, so we hit Binance directly (works fine from a non-US machine).
+const USE_PROXY = import.meta.env.PROD
+const PROXY = '/api/binance'
+
+// URL builders — the ONLY thing that changes between dev (direct) and prod (proxy).
+function spotUrl() {
+  const symbolsJson = JSON.stringify(PAIRS)
+  return USE_PROXY
+    ? `${PROXY}?type=spot&symbols=${encodeURIComponent(symbolsJson)}`
+    : `${SPOT_BASE}/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolsJson)}`
+}
+
+function fundingUrl() {
+  return USE_PROXY
+    ? `${PROXY}?type=funding`
+    : `${FUT_BASE}/fapi/v1/premiumIndex`
+}
+
+function klinesUrl(pair) {
+  return USE_PROXY
+    ? `${PROXY}?type=klines&pair=${pair}`
+    : `${SPOT_BASE}/api/v3/klines?symbol=${pair}&interval=1d&limit=31`
+}
+
 async function getJson(url, label) {
   let res
   try {
@@ -42,9 +70,7 @@ async function getJson(url, label) {
 
 // ---- Spot: 24h ticker for our exact symbol list (one request) ----
 export async function fetchSpot() {
-  const symbolsParam = encodeURIComponent(JSON.stringify(PAIRS))
-  const url = `${SPOT_BASE}/api/v3/ticker/24hr?symbols=${symbolsParam}`
-  const data = await getJson(url, 'spot')
+  const data = await getJson(spotUrl(), 'spot')
   const out = {}
   for (const t of data) {
     out[t.symbol] = {
@@ -61,7 +87,7 @@ export async function fetchSpot() {
 // ---- Futures: funding rate + mark/index for the basis (one request) ----
 // premiumIndex with no symbol returns the full board; we filter to our set.
 export async function fetchFunding() {
-  const data = await getJson(`${FUT_BASE}/fapi/v1/premiumIndex`, 'funding')
+  const data = await getJson(fundingUrl(), 'funding')
   const out = {}
   for (const f of data) {
     if (!PAIR_SET.has(f.symbol)) continue
@@ -91,8 +117,7 @@ export async function fetchVolumeBaseline() {
   await Promise.all(
     COINS.map(async (c) => {
       try {
-        const url = `${SPOT_BASE}/api/v3/klines?symbol=${c.pair}&interval=1d&limit=31`
-        const rows = await getJson(url, 'klines')
+        const rows = await getJson(klinesUrl(c.pair), 'klines')
         // Each row: [openTime, open, high, low, close, volume, closeTime, quoteVolume, ...]
         const prior = rows.slice(0, -1).map((r) => Number(r[7])) // exclude today
         if (!prior.length) return
