@@ -55,6 +55,12 @@ function klinesUrl(pair) {
     : `${SPOT_BASE}/api/v3/klines?symbol=${pair}&interval=1d&limit=31`
 }
 
+function fundingHistoryUrl(pair) {
+  return USE_PROXY
+    ? `${PROXY}?type=fundinghistory&pair=${pair}`
+    : `${FUT_BASE}/fapi/v1/fundingRate?symbol=${pair}&limit=21`
+}
+
 async function getJson(url, label) {
   let res
   try {
@@ -126,6 +132,31 @@ export async function fetchVolumeBaseline() {
         out[c.pair] = { medianQuoteVol: median }
       } catch {
         // A single coin's baseline missing is non-fatal; the cell just omits the ratio.
+      }
+    }),
+  )
+  return out
+}
+
+// ---- Funding history: last ~7 days of settlements, for the inline sparkline ----
+// Binance settles funding 3x/day, so limit=21 ≈ 7 days. We store the annualized
+// series (oldest→newest) plus its own 7-day average — the reference that tells
+// you whether the current reading is actually extreme for this coin.
+export async function fetchFundingHistory() {
+  const out = {}
+  await Promise.all(
+    COINS.map(async (c) => {
+      try {
+        const rows = await getJson(fundingHistoryUrl(c.pair), 'fundinghistory')
+        if (!Array.isArray(rows) || rows.length < 2) return
+        // Each row: { symbol, fundingRate, fundingTime }. Sort oldest→newest.
+        const sorted = [...rows].sort((a, b) => Number(a.fundingTime) - Number(b.fundingTime))
+        // Annualize each settlement the same way as the live board: rate*3*365.
+        const annualized = sorted.map((r) => Number(r.fundingRate) * 3 * 365 * 100)
+        const avgAnnualizedPct = annualized.reduce((s, v) => s + v, 0) / annualized.length
+        out[c.pair] = { annualized, avgAnnualizedPct }
+      } catch {
+        // A single coin's history missing is non-fatal; that row just omits the sparkline.
       }
     }),
   )

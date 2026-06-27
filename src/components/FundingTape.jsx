@@ -7,13 +7,13 @@ import { fmtPct, fmtCountdown } from '../lib/format.js'
 // Positive (right, green) = longs are paying shorts → crowd leans long.
 // Negative (left, oxblood) = shorts are paying longs → crowd leans short.
 // The further from the center zero rule, the more crowded that side is.
-export default function FundingTape({ funding, now }) {
+export default function FundingTape({ funding, history, now }) {
   const rows = useMemo(() => {
     if (!funding) return []
-    return COINS.map((c) => ({ ...c, f: funding[c.pair] }))
+    return COINS.map((c) => ({ ...c, f: funding[c.pair], h: history?.[c.pair] }))
       .filter((r) => r.f)
       .sort((a, b) => b.f.annualizedPct - a.f.annualizedPct)
-  }, [funding])
+  }, [funding, history])
 
   const maxAbs = useMemo(
     () => Math.max(0.01, ...rows.map((r) => Math.abs(r.f.annualizedPct))),
@@ -40,17 +40,20 @@ export default function FundingTape({ funding, now }) {
         Funding is the fee perpetual traders pay each 8&nbsp;hours to hold a position.{' '}
         <span className="text-ink">Heavily positive</span> means the crowd is long and paying to
         stay long; <span className="text-ink">heavily negative</span> means it's short and paying.
-        Extreme readings mark crowded trades — the kind that unwind fast.
+        Extreme readings mark crowded trades — the kind that unwind fast. The{' '}
+        <span className="text-ink">7-day</span> line traces each coin's last week of settlements,
+        so you can tell a one-off spike from a standing lean.
       </p>
 
       {/* Scale header */}
       <div className="mt-6 grid grid-cols-[1fr] gap-px">
-        <div className="hidden sm:grid grid-cols-[150px_1fr_120px] items-end gap-4 pb-2 rule-b font-mono text-2xs uppercase tracking-wider text-inkFaint">
+        <div className="hidden sm:grid grid-cols-[150px_1fr_72px_120px] items-end gap-4 pb-2 rule-b font-mono text-2xs uppercase tracking-wider text-inkFaint">
           <span>Asset</span>
           <div className="flex items-center justify-between">
             <span>← shorts pay (bearish crowd)</span>
             <span>longs pay (bullish crowd) →</span>
           </div>
+          <span className="text-center">7-Day</span>
           <span className="text-right">Annualized</span>
         </div>
 
@@ -64,6 +67,19 @@ export default function FundingTape({ funding, now }) {
   )
 }
 
+// Compare the live reading to the coin's own 7-day average — the honest
+// "is this actually extreme?" tell. Null when there's no usable history or the
+// recent baseline is basically flat (a ratio against ~zero is meaningless).
+function vsAvgTag(v, hist) {
+  if (!hist || !hist.annualized || hist.annualized.length < 2) return null
+  const avgMag = Math.abs(hist.avgAnnualizedPct)
+  const curMag = Math.abs(v)
+  if (avgMag < 0.3 && curMag < 0.3) return null
+  if (curMag > avgMag * 1.15) return 'above 7d avg'
+  if (curMag < avgMag * 0.85) return 'below 7d avg'
+  return 'near 7d avg'
+}
+
 function TapeRow({ row, maxAbs }) {
   const v = row.f.annualizedPct
   const pos = v >= 0
@@ -71,9 +87,10 @@ function TapeRow({ row, maxAbs }) {
   const neutral = Math.abs(v) <= 0.5 // basically flat — don't color a non-signal
   const Icon = neutral ? Minus : v > 0 ? ArrowUpRight : ArrowDownRight
   const valColor = neutral ? 'text-inkSoft' : pos ? 'text-pos' : 'text-neg'
+  const tag = vsAvgTag(v, row.h)
 
   return (
-    <li className="group grid grid-cols-[88px_1fr_84px] sm:grid-cols-[150px_1fr_120px] items-center gap-3 sm:gap-4 py-2.5">
+    <li className="group grid grid-cols-[88px_1fr_84px] sm:grid-cols-[150px_1fr_72px_120px] items-center gap-3 sm:gap-4 py-2.5">
       {/* Asset */}
       <div className="min-w-0">
         <div className="flex items-baseline gap-2">
@@ -111,13 +128,63 @@ function TapeRow({ row, maxAbs }) {
         </div>
       </div>
 
-      {/* Annualized value */}
-      <div className="flex items-center justify-end gap-1 text-right">
-        <Icon size={13} className={valColor} aria-hidden="true" />
-        <span className={`font-mono text-sm font-600 tnum ${valColor}`}>
-          {fmtPct(v, 1)}
-        </span>
+      {/* 7-day funding sparkline (desktop only — like the coin name & basis) */}
+      <div className="hidden sm:flex items-center justify-center">
+        <Sparkline series={row.h?.annualized} sym={row.sym} />
+      </div>
+
+      {/* Annualized value + how it sits vs this coin's own 7-day average */}
+      <div className="flex flex-col items-end gap-0.5 text-right">
+        <div className="flex items-center gap-1">
+          <Icon size={13} className={valColor} aria-hidden="true" />
+          <span className={`font-mono text-sm font-600 tnum ${valColor}`}>
+            {fmtPct(v, 1)}
+          </span>
+        </div>
+        {tag && (
+          <span className="font-mono text-2xs text-inkFaint">{tag}</span>
+        )}
       </div>
     </li>
+  )
+}
+
+// Hand-rolled SVG sparkline — no charting library, to match the no-dependency
+// editorial style. Plots the annualized funding series (oldest→newest) with a
+// hairline zero baseline; the line takes the green/oxblood ink of its latest
+// reading. Static by design, so prefers-reduced-motion needs nothing extra.
+function Sparkline({ series, sym }) {
+  const W = 60
+  const H = 18
+  const PAD = 1.5
+
+  if (!series || series.length < 2) {
+    // Honest empty state: reserve the lane, draw nothing invented.
+    return <div className="h-[18px] w-[60px]" aria-hidden="true" />
+  }
+
+  const min = Math.min(...series, 0)
+  const max = Math.max(...series, 0)
+  const range = max - min || 1
+  const x = (i) => PAD + (i / (series.length - 1)) * (W - 2 * PAD)
+  const y = (val) => PAD + (1 - (val - min) / range) * (H - 2 * PAD)
+  const d = series.map((val, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(val).toFixed(1)}`).join(' ')
+  const last = series[series.length - 1]
+  const ink = last >= 0 ? 'text-pos' : 'text-neg'
+  const zeroY = y(0).toFixed(1)
+
+  return (
+    <svg
+      width={W}
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      className="overflow-visible"
+      role="img"
+      aria-label={`${sym} funding, last 7 days`}
+    >
+      <line x1="0" y1={zeroY} x2={W} y2={zeroY} className="text-rule" stroke="currentColor" strokeWidth="0.5" />
+      <path d={d} fill="none" className={ink} stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(series.length - 1).toFixed(1)} cy={y(last).toFixed(1)} r="1.4" className={ink} fill="currentColor" />
+    </svg>
   )
 }

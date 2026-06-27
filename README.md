@@ -42,9 +42,10 @@ npm run preview # serve the build
 | Spot price / 24h change / volume / high / low | `GET https://data-api.binance.vision/api/v3/ticker/24hr?symbols=[...]` |
 | 30-day volume baseline | `GET https://data-api.binance.vision/api/v3/klines?symbol={PAIR}&interval=1d&limit=31` |
 | Perp funding rate + mark/index price (for basis) | `GET https://fapi.binance.com/fapi/v1/premiumIndex` |
+| 7-day funding history (for the sparkline) | `GET https://fapi.binance.com/fapi/v1/fundingRate?symbol={PAIR}&limit=21` |
 
-- **Spot** polls every ~10s. **Funding** polls every ~30s. The **volume baseline** refreshes
-  every 5 minutes (it only moves on daily candle close).
+- **Spot** polls every ~10s. **Funding** polls every ~30s. The **volume baseline** and
+  **funding history** refresh every 5 minutes (they only move on daily close / the 8h settlement).
 - HTTP `418`/`429` (rate limits) and network/CORS failures are caught and shown in the
   interface's own voice; the last good snapshot is retained until the next success.
 
@@ -53,6 +54,8 @@ npm run preview # serve the build
 - **Annualized funding** = `lastFundingRate × 3 × 365 × 100` (3 settlements/day).
 - **Spot–perp basis** = `(markPrice − indexPrice) / indexPrice × 100`.
 - **Vol vs 30d** = `quoteVolume(24h) / median(prior 30 daily quoteVolumes)`. `≥ 1.5×` is flagged.
+- **7-day sparkline / "vs 7d avg"** — each row's funding settlements over the last week
+  (annualized), with the current reading tagged above / near / below that coin's own 7-day mean.
 
 ## Design
 

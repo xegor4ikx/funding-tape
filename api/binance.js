@@ -31,6 +31,12 @@ function buildUpstream(query) {
     return `${SPOT_BASE}/api/v3/klines?symbol=${pair}&interval=1d&limit=31`
   }
 
+  if (type === 'fundinghistory') {
+    // Last ~7 days of funding settlements (3/day) for the inline sparkline.
+    if (!pair || !/^[A-Z0-9]{2,20}$/.test(pair)) throw new Error('bad pair')
+    return `${FUT_BASE}/fapi/v1/fundingRate?symbol=${pair}&limit=21`
+  }
+
   throw new Error('unknown type')
 }
 

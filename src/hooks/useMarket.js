@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchSpot, fetchFunding, fetchVolumeBaseline } from '../lib/binance.js'
+import { fetchSpot, fetchFunding, fetchVolumeBaseline, fetchFundingHistory } from '../lib/binance.js'
 
 // Polls each Binance feed on its own sane interval and tracks real
 // loading / error / last-updated state. No data is fabricated on failure;
@@ -8,6 +8,7 @@ export function useMarket() {
   const [spot, setSpot] = useState(null)
   const [funding, setFunding] = useState(null)
   const [baseline, setBaseline] = useState({})
+  const [fundingHistory, setFundingHistory] = useState({})
 
   const [spotErr, setSpotErr] = useState(null)
   const [fundingErr, setFundingErr] = useState(null)
@@ -52,18 +53,25 @@ export function useMarket() {
     if (Object.keys(d).length) setBaseline(d)
   }, [])
 
+  const loadHistory = useCallback(async () => {
+    const d = await fetchFundingHistory()
+    if (!mounted.current) return
+    if (Object.keys(d).length) setFundingHistory(d)
+  }, [])
+
   useEffect(() => {
-    loadSpot(); loadFunding(); loadBaseline()
+    loadSpot(); loadFunding(); loadBaseline(); loadHistory()
     const s = setInterval(loadSpot, 10_000)        // spot every ~10s
     const f = setInterval(loadFunding, 30_000)     // funding every ~30s
     const b = setInterval(loadBaseline, 300_000)   // volume baseline every 5m
-    return () => { clearInterval(s); clearInterval(f); clearInterval(b) }
-  }, [loadSpot, loadFunding, loadBaseline])
+    const h = setInterval(loadHistory, 300_000)    // funding history every 5m (only moves every 8h)
+    return () => { clearInterval(s); clearInterval(f); clearInterval(b); clearInterval(h) }
+  }, [loadSpot, loadFunding, loadBaseline, loadHistory])
 
   const refresh = useCallback(() => { loadSpot(); loadFunding() }, [loadSpot, loadFunding])
 
   return {
-    spot, funding, baseline,
+    spot, funding, baseline, fundingHistory,
     spotErr, fundingErr,
     spotAt, fundingAt,
     loading: spot == null && funding == null,

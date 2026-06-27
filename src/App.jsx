@@ -58,7 +58,7 @@ export default function App() {
             <LoadingState />
           ) : (
             <>
-              <FundingTape funding={m.funding} now={now} />
+              <FundingTape funding={m.funding} history={m.fundingHistory} now={now} />
               <Listings spot={m.spot} funding={m.funding} baseline={m.baseline} />
             </>
           )}
